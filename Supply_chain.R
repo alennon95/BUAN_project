@@ -385,6 +385,59 @@ plot_13 <- ggplot(dispatch_times, aes(x = Days_Until_Dispatch)) +
   theme_minimal()
 plot_13
 
+
+
+
+calculated_SRS<- sqldf("SELECT s.Supplier_ID, 
+AVG(o.Quantiy_Ordered) AS, 
+AVG(o.Order_Value_USD) AS avg_quantity,
+AVG(o.Delay_Days) AS avg_delay, 
+s.Historical_Disruption_Count, 
+COUNT(o.Order_ID) AS total_orders,
+GROUP BY Supplier_ID, 
+FROM Supply_Chain")
+
+
+
+calculated_SRS$delay_score <- 1 - (calculated_SRS$avg_delay / 5)
+calculated_SRS$delay_score[calculated_SRS$delay_score < 0] <- 0  # Cap at 0
+calculated_SRS$disruption_score <- 1 - (calculated_SRS$Historical_Disruption_Count / 20)
+calculated_SRS$calculated_reliability_score <- 
+  (calculated_SRS$delay_score * 0.5) + 
+  (calculated_SRS$disruption_score * 0.5)
+calculated_SRS$original_score <- supplier_df$Supplier_Reliability_Score[match(calculated_SRS$Supplier_ID, supplier_df$Supplier_ID)]
+head(calculated_SRS)
+cor(calculated_SRS$original_score, calculated_SRS$calculated_reliability_score)
+
+
+calculated_SRS <- sqldf("
+  SELECT s.Supplier_ID, 
+         AVG(o.Quantity_Ordered) AS avg_quantity,
+         AVG(o.Order_Value_USD) AS avg_order_value,
+         AVG(o.Delay_Days) AS avg_delay, 
+         s.Historical_Disruption_Count, 
+         COUNT(o.Order_ID) AS total_orders
+  FROM supplier_df s
+  JOIN order_df o ON s.Supplier_ID = o.Supplier_ID
+  GROUP BY s.Supplier_ID
+                        ORDER BY delay_score")
+
+
+calculated_SRS
+
+
+your_score_model <- lm(avg_delay ~ calculated_reliability_score, data = calculated_SRS)
+summary(your_score_model)
+
+
+original_score_model <- lm(avg_delay ~ original_score, data = calculated_SRS)
+summary(original_score_model)
+
+
+
+
+
+
 #TEST to find reliability score## looks like Reliability score is not strongly correlated with anything
 # Select only numeric columns from raw data
 numeric_data <- supply_chain_df %>%
@@ -501,17 +554,89 @@ write.csv(order_df, "supply_chain_clean.csv", row.names = FALSE)
 
 
 
+# Calculate each supplier's actual on-time rate from orders
+supplier_otd <- sqldf("
+  SELECT s.Supplier_ID,
+         s.Supplier_Reliability_Score,
+         AVG(o.On_Time_Flag) AS actual_on_time_rate,
+         COUNT(*) AS total_orders
+  FROM supplier_df s
+  JOIN order_df o ON s.Supplier_ID = o.Supplier_ID
+  GROUP BY s.Supplier_ID
+")
+supplier_otd
+# Test correlation: Does reliability score match actual performance?
+cor(supplier_otd$Supplier_Reliability_Score, supplier_otd$actual_on_time_rate)
+
+# Or as a model:
+otd_model <- lm(Supplier_Reliability_Score ~ actual_on_time_rate, data = supplier_otd)
+summary(otd_model)
 
 
 
+# Simplified model: Just severity + food
+simple_model <- lm(Delay_Days ~ Disruption_Severity + Product_Category, 
+                   data = order_df)
+summary(simple_model)
+
+# Multiple regression with your calculated score + other factors
+improved_model <- lm(avg_delay ~ calculated_reliability_score + 
+                       total_orders + 
+                       avg_order_value, 
+                     data = calculated_SRS)
+summary(improved_model)
 
 
 
+calculated_SRS <- sqldf("
+  SELECT s.Supplier_ID, 
+         AVG(o.Quantity_Ordered) AS avg_quantity,
+         AVG(o.Order_Value_USD) AS avg_order_value,
+         AVG(o.Delay_Days) AS avg_delay, 
+         s.Historical_Disruption_Count, 
+         COUNT(o.Order_ID) AS total_orders
+  FROM supplier_df s
+  JOIN order_df o ON s.Supplier_ID = o.Supplier_ID
+  GROUP BY s.Supplier_ID
+  ORDER BY avg_delay
+")
 
+# THEN create delay_score in R (like you did before)
+calculated_SRS$delay_score <- 1 - (calculated_SRS$avg_delay / 5)
+calculated_SRS$delay_score[calculated_SRS$delay_score < 0] <- 0
 
+calculated_SRS$disruption_score <- 1 - (calculated_SRS$Historical_Disruption_Count / 20)
 
+calculated_SRS$calculated_reliability_score <- 
+  (calculated_SRS$delay_score * 0.5) + 
+  (calculated_SRS$disruption_score * 0.5)
+calculated_SRS
 
+# Add original score for comparison
+calculated_SRS$original_score <- supplier_df$Supplier_Reliability_Score[
+  match(calculated_SRS$Supplier_ID, supplier_df$Supplier_ID)]
 
+# View comparison
+head(calculated_SRS[, c("Supplier_ID", "original_score", "calculated_reliability_score", "avg_delay")])
+
+# Correlation
+cor(calculated_SRS$original_score, calculated_SRS$calculated_reliability_score)
+
+# Scatter plot: Original vs Calculated scores
+plot_reliability <- ggplot(calculated_SRS, 
+                           aes(x = original_score, y = calculated_reliability_score)) +
+  geom_point(size = 3, color = "blue") +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Original vs Performance-Based Reliability Scores",
+       subtitle = "Red line = perfect agreement",
+       x = "Original Reliability Score",
+       y = "Calculated Reliability Score") +
+  theme_minimal()
+plot_reliability
+
+combined_model <- lm(Delay_Days ~ Disruption_Severity + Product_Category, 
+                     data = order_df)
+summary(combined_model)
 
 
 
