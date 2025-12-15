@@ -90,6 +90,13 @@ buyer_df_grp <- supply_chain_df %>%
   select(Buyer_ID, Organization_ID, Dominant_Buyer_Flag) %>%
   distinct(Buyer_ID, .keep_all = TRUE)
 
+# Save cleaned/tidy datasets
+#write.csv(supply_chain_df, "supply_chain_clean.csv", row.names = FALSE)
+#write.csv(order_df, "order_df.csv", row.names = FALSE)
+#write.csv(supplier_df_grp, "supplier_df.csv", row.names = FALSE)
+#write.csv(buyer_df_grp, "buyer_df.csv", row.names = FALSE)
+
+
 
 # ============================================================================
 # 3. DATA QUALITY: INITIAL EXPLORATION
